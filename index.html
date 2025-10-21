@@ -37,155 +37,210 @@ body{font-family:'Poppins',sans-serif;background:#f8f9fa;}
 <div class="main-content">
 <h2 class="fw-bold mb-4 text-primary">Dashboard Survei Jalan UPNVJT</h2>
 
-<!-- Upload CSV -->
 <div class="text-end mb-4">
 <input type="file" id="csvFile" accept=".csv" hidden>
-<button class="btn btn-primary" onclick="document.getElementById('csvFile').click()">
-<i class="bi bi-upload me-2"></i>Upload CSV
-</button>
+<button class="btn btn-primary" onclick="document.getElementById('csvFile').click()"><i class="bi bi-upload me-2"></i>Upload CSV</button>
 <button class="btn btn-danger ms-2" onclick="resetData()">Reset Data</button>
 </div>
 
-<!-- KPI Cards -->
 <div class="row g-4 kpi-row mb-4">
-  <div class="col-md-4">
-    <div class="card p-3 d-flex align-items-center">
-      <div class="icon bg-primary text-white"><i class="bi bi-people"></i></div>
-      <div class="flex-grow-1 ms-3">
-        <h6>Total Responden</h6>
-        <h3 id="totalResponden">0</h3>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="card p-3 d-flex align-items-center">
-      <div class="icon bg-success text-white"><i class="bi bi-road"></i></div>
-      <div class="flex-grow-1 ms-3">
-        <h6>Kondisi Jalan Baik (Skor>3)</h6>
-        <h3 id="jalanBaik">0%</h3>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="card p-3 d-flex align-items-center">
-      <div class="icon bg-warning text-white"><i class="bi bi-emoji-smile"></i></div>
-      <div class="flex-grow-1 ms-3">
-        <h6>Rata-rata Kepuasan</h6>
-        <h3 id="rataKepuasan">0.0</h3>
-      </div>
-    </div>
-  </div>
+<div class="col-md-4">
+<div class="card p-3 d-flex align-items-center">
+<div class="icon bg-primary text-white"><i class="bi bi-people"></i></div>
+<div class="flex-grow-1 ms-3">
+<h6>Total Responden</h6>
+<h3 id="totalResponden">0</h3>
+</div>
+</div>
+</div>
+<div class="col-md-4">
+<div class="card p-3 d-flex align-items-center">
+<div class="icon bg-success text-white"><i class="bi bi-road"></i></div>
+<div class="flex-grow-1 ms-3">
+<h6>Kondisi Jalan Baik (Skor>3)</h6>
+<h3 id="jalanBaik">0%</h3>
+</div>
+</div>
+</div>
+<div class="col-md-4">
+<div class="card p-3 d-flex align-items-center">
+<div class="icon bg-warning text-white"><i class="bi bi-emoji-smile"></i></div>
+<div class="flex-grow-1 ms-3">
+<h6>Rata-rata Kepuasan</h6>
+<h3 id="rataKepuasan">0.0</h3>
+</div>
+</div>
+</div>
 </div>
 
-<!-- Filter Range Skor -->
-<div class="row mb-4">
-  <div class="col-md-6">
-    <label for="rangeMin" class="form-label">Skor Minimal</label>
-    <input type="number" id="rangeMin" class="form-control" value="0" min="0" max="5">
-  </div>
-  <div class="col-md-6">
-    <label for="rangeMax" class="form-label">Skor Maksimal</label>
-    <input type="number" id="rangeMax" class="form-control" value="5" min="0" max="5">
-  </div>
-  <div class="col-md-12 mt-2">
-    <button class="btn btn-info" onclick="applyFilter()">Terapkan Filter Skor</button>
-  </div>
+<div class="row mt-4">
+<div class="col-md-6">
+<div class="card">
+<h5>Analisis Kenyamanan vs Insiden</h5>
+<canvas id="chartKenyamanan"></canvas>
+</div>
+</div>
 </div>
 
-<!-- Chart Area -->
-<div class="row">
-  <div class="col-md-6">
-    <div class="card">
-      <h5>Distribusi Kondisi Jalan</h5>
-      <canvas id="chartKondisi"></canvas>
-    </div>
-  </div>
-  <div class="col-md-6">
-    <div class="card">
-      <h5>Distribusi Kepuasan</h5>
-      <canvas id="chartKepuasan"></canvas>
-    </div>
-  </div>
+<div class="row mt-4">
+<div class="col-md-6">
+<div class="card">
+<h5>Distribusi Kondisi Jalan</h5>
+<canvas id="chartKondisi"></canvas>
+</div>
+</div>
+<div class="col-md-6">
+<div class="card">
+<h5>Distribusi Kepuasan</h5>
+<canvas id="chartKepuasan"></canvas>
+</div>
+</div>
 </div>
 
 <p id="infoText" class="text-danger fw-bold mt-3"></p>
-
 </div>
 
 <script>
 let surveyData = JSON.parse(localStorage.getItem("surveyData") || "[]");
 const csvFile = document.getElementById("csvFile");
-let chartKondisi, chartKepuasan;
+let chartKondisi, chartKepuasan, chartKenyamanan;
 
-// KPI & Chart update
+// Bersihkan dan normalisasi Y
+function normalizeY(val){
+    if(!val) return "";
+    val = val.normalize("NFKD")
+             .replace(/[\u2013\u2014\u2015]/g,"-")
+             .replace(/[\u00A0]/g," ")
+             .replace(/[^\x00-\x7F]/g,"")
+             .trim().toLowerCase();
+    if(val.includes("1 kali")) return "1 kali";
+    if(val.includes("2-3") || val.includes("2 – 3")) return "2-3 kali";
+    if(val.includes("lebih dari")) return "lebih dari 3 kali";
+    return val;
+}
+
+// Render chart kenyamanan vs insiden
+function renderKenyamananChart(data){
+    if(!data || data.length===0) return;
+
+    const colKenyamanan = "Bagaimana kenyamanan berkendara (motor/mobil) di jalan kampus?";
+    const colInsiden = "Berapa kali Anda mengalami kesulitan atau insiden tersebut?";
+
+    const xVals = data.map(r => parseInt(r[colKenyamanan]) || 0);
+    const yVals = data.map(r => {
+        let val = r[colInsiden] || "";
+        val = val.replace(/–|—|–/g, "-").trim().toLowerCase();
+        if(val.includes("1 kali")) return "1 kali";
+        if(val.includes("2-3") || val.includes("2–3")) return "2-3 kali";
+        if(val.includes("lebih dari")) return "lebih dari 3 kali";
+        return val;
+    });
+
+    const yCategories = ["1 kali","2-3 kali","lebih dari 3 kali"];
+    const counts = {};
+    yCategories.forEach(y=>counts[y] = [0,0,0,0,0]);
+
+    for(let i=0;i<data.length;i++){
+        const x = xVals[i];
+        const y = yVals[i];
+        if(x>=1 && x<=5 && yCategories.includes(y)){
+            counts[y][x-1]++;
+        }
+    }
+
+    const datasets = yCategories.map((y,i)=>({
+        label: y,
+        data: counts[y],
+        backgroundColor:["rgba(13,110,253,0.7)","rgba(0,200,83,0.7)","rgba(220,53,69,0.7)"][i]
+    }));
+
+    const ctx = document.getElementById("chartKenyamanan").getContext("2d");
+    if(chartKenyamanan) chartKenyamanan.destroy();
+    chartKenyamanan = new Chart(ctx,{
+        type:"bar",
+        data:{labels:[1,2,3,4,5], datasets: datasets},
+        options:{
+            responsive:true,
+            plugins:{title:{display:true,text:"Kenyamanan vs Insiden"}},
+            interaction:{mode:"index",intersect:false},
+            scales:{
+                x:{stacked:true,title:{display:true,text:"Kenyamanan (1-5)"}},
+                y:{stacked:true,title:{display:true,text:"Jumlah Responden"},beginAtZero:true}
+            }
+        }
+    });
+}
+
+
+// Render chart kondisi & kepuasan
+function renderCharts(kondisi,kepuasan){
+    const ctx1 = document.getElementById("chartKondisi").getContext("2d");
+    const counts1 = {};
+    kondisi.forEach(v=>counts1[v]=(counts1[v]||0)+1);
+    if(chartKondisi) chartKondisi.destroy();
+    chartKondisi = new Chart(ctx1,{
+        type:"bar",
+        data:{labels:Object.keys(counts1), datasets:[{label:"Kondisi Jalan",data:Object.values(counts1),backgroundColor:"rgba(13,110,253,0.7)"}]},
+        options:{responsive:true,scales:{y:{beginAtZero:true}}}
+    });
+
+    const ctx2 = document.getElementById("chartKepuasan").getContext("2d");
+    const counts2 = {};
+    kepuasan.forEach(v=>counts2[v]=(counts2[v]||0)+1);
+    if(chartKepuasan) chartKepuasan.destroy();
+    chartKepuasan = new Chart(ctx2,{
+        type:"bar",
+        data:{labels:Object.keys(counts2), datasets:[{label:"Kepuasan",data:Object.values(counts2),backgroundColor:"rgba(255,193,7,0.7)"}]},
+        options:{responsive:true,scales:{y:{beginAtZero:true}}}
+    });
+}
+
+// Update dashboard
 function updateDashboard(data){
-    localStorage.setItem("surveyData", JSON.stringify(data));
-    surveyData = data;
-
     if(!data || data.length===0){
         document.getElementById("infoText").textContent="⚠️ Data kosong.";
         return;
     }
     document.getElementById("infoText").textContent="";
+    surveyData = data;
+    localStorage.setItem("surveyData",JSON.stringify(data));
+
+    const headers = Object.keys(data[0]);
+    const colKenyamanan = headers.find(h=>h.toLowerCase().includes("kenyamanan"));
+    const colInsiden = headers.find(h=>h.toLowerCase().includes("insiden") || h.toLowerCase().includes("kesulitan"));
+
+    if(!colKenyamanan || !colInsiden){
+        document.getElementById("infoText").textContent="⚠️ Tidak menemukan kolom kenyamanan atau insiden di CSV.";
+        return;
+    }
+
     document.getElementById("totalResponden").textContent = data.length;
 
-    const kondisi = data.map(r=>parseFloat(r[Object.keys(r)[8]])||0);
+    const kondisi = data.map(r=>parseFloat(r[headers[8]])||0);
     const baik = kondisi.filter(v=>v>3).length;
-    const persenBaik = ((baik/data.length)*100).toFixed(1)+"%";
-    document.getElementById("jalanBaik").textContent = persenBaik;
+    document.getElementById("jalanBaik").textContent = ((baik/data.length)*100).toFixed(1) + "%";
 
-    const kepuasan = data.map(r=>parseFloat(r[Object.keys(r)[18]])||0);
-    const avgKepuasan = (kepuasan.reduce((a,b)=>a+b,0)/data.length).toFixed(2);
+    const kepuasan = data.map(r=>parseFloat(r[headers[18]])||0);
+    const avgKepuasan = (kepuasan.reduce((a,b)=>a+b,0)/kepuasan.length).toFixed(2);
     document.getElementById("rataKepuasan").textContent = avgKepuasan;
 
     renderCharts(kondisi,kepuasan);
+    renderKenyamananChart(data,colKenyamanan,colInsiden);
 }
 
-function renderCharts(kondisi,kepuasan){
-    if(chartKondisi) chartKondisi.destroy();
-    if(chartKepuasan) chartKepuasan.destroy();
-
-    // Kondisi Jalan
-    const ctx1 = document.getElementById("chartKondisi").getContext("2d");
-    const counts1 = {};
-    kondisi.forEach(v=>counts1[v]=(counts1[v]||0)+1);
-    chartKondisi = new Chart(ctx1,{
-        type:"bar",
-        data:{labels:Object.keys(counts1),datasets:[{label:"Kondisi Jalan",data:Object.values(counts1),backgroundColor:"rgba(13,110,253,0.7)"}]},
-        options:{responsive:true,scales:{y:{beginAtZero:true}}}
-    });
-
-    // Kepuasan
-    const ctx2 = document.getElementById("chartKepuasan").getContext("2d");
-    const counts2 = {};
-    kepuasan.forEach(v=>counts2[v]=(counts2[v]||0)+1);
-    chartKepuasan = new Chart(ctx2,{
-        type:"bar",
-        data:{labels:Object.keys(counts2),datasets:[{label:"Kepuasan",data:Object.values(counts2),backgroundColor:"rgba(255,193,7,0.7)"}]},
-        options:{responsive:true,scales:{y:{beginAtZero:true}}}
-    });
-}
-
-// Filter skor
-function applyFilter(){
-    if(!surveyData.length) return;
-    const min = parseFloat(document.getElementById("rangeMin").value)||0;
-    const max = parseFloat(document.getElementById("rangeMax").value)||5;
-
-    const filtered = surveyData.filter(r=>{
-        const skor = parseFloat(r[Object.keys(r)[8]])||0;
-        return skor >= min && skor <= max;
-    });
-    updateDashboard(filtered);
-}
-
+// Upload CSV
 csvFile.addEventListener("change", function(e){
     const file = e.target.files[0];
-    Papa.parse(file,{header:true,skipEmptyLines:true,complete:function(results){
-        updateDashboard(results.data);
-    }});
+    Papa.parse(file,{
+        header:true,
+        skipEmptyLines:true,
+        complete:function(results){
+            updateDashboard(results.data);
+        }
+    });
 });
 
+// Reset
 function resetData(){
     if(confirm("Hapus semua data survey?")){
         localStorage.removeItem("surveyData");
@@ -193,10 +248,11 @@ function resetData(){
     }
 }
 
-// load jika sudah ada
+// Load data lama
 if(surveyData.length>0){
     updateDashboard(surveyData);
 }
 </script>
+
 </body>
 </html>
