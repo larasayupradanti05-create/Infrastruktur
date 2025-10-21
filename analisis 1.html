@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Interaktif Jalan UPNVJT</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body{font-family:'Poppins',sans-serif;background:#f8f9fa;}
+.sidebar{height:100vh;width:250px;background:#0d6efd;color:white;position:fixed;padding:1rem;display:flex;flex-direction:column;}
+.sidebar h4{text-align:center;margin-bottom:2rem;font-weight:700;}
+.sidebar a{color:#dbe4ff;text-decoration:none;padding:10px 15px;margin-bottom:5px;border-radius:8px;display:block;transition:0.2s;}
+.sidebar a:hover,.sidebar a.active{background:#ffffff22;color:#fff;}
+.main-content{margin-left:260px;padding:2rem;}
+.card{border-radius:1rem;box-shadow:0 4px 15px rgba(0,0,0,0.05);margin-bottom:1.5rem;padding:1rem;}
+.chart-container{width:100%;max-width:900px;margin:2rem auto;}
+</style>
+</head>
+<body>
+<div class="sidebar">
+<h4><i class="bi bi-geo-alt-fill"></i> Jalan UPNVJT</h4>
+<a href="index.html">Dashboard</a>
+<a href="data-responden.html">Data Responden</a>
+<a href="analisis 1.html">Analisis</a>
+<a href="ringkasan.html">Ringkasan</a>
+<a href="interaktif.html">Interaktif</a>
+<a href="#"><i class="bi bi-info-circle me-2"></i> Tentang</a>
+</div>
+
+<div class="main-content">
+<h2 class="fw-bold mb-4 text-primary">Analisis Interaktif Data Survei Jalan</h2>
+
+<div class="mb-3">
+<label for="questionSelect" class="form-label">Pilih Pertanyaan</label>
+<select id="questionSelect" class="form-select"><option value="">-- Pilih Pertanyaan --</option></select>
+</div>
+
+<div id="chartsArea"></div>
+
+<h5>📋 Ringkasan Statistik</h5>
+<p id="summaryText">Memuat data...</p>
+
+<h5>🧩 Tipe Data & Skala Data</h5>
+<table class="table table-striped mt-2">
+<thead class="table-primary"><tr><th>Kolom</th><th>Tipe Data</th><th>Skala</th></tr></thead>
+<tbody id="dataTypeTable"></tbody>
+</table>
+
+<p id="infoText" class="text-danger fw-bold text-center"></p>
+</div>
+
+<script>
+// Ambil data CSV dari localStorage
+const csvData = JSON.parse(localStorage.getItem("surveyData") || "[]");
+const questionSelect = document.getElementById("questionSelect");
+const chartsArea = document.getElementById("chartsArea");
+const infoText = document.getElementById("infoText");
+const summaryText = document.getElementById("summaryText");
+const dataTypeTable = document.getElementById("dataTypeTable");
+let chartInstances = [];
+
+// Inisialisasi dropdown & kategori otomatis
+const kategoriMap = {};
+if (csvData.length === 0) {
+    infoText.textContent = "⚠️ Data belum dimuat. Silakan upload CSV di Dashboard.";
+} else {
+    Object.keys(csvData[0]).forEach(col => {
+        // Tambah ke dropdown
+        const option = document.createElement("option");
+        option.value = col;
+        option.textContent = col;
+        questionSelect.appendChild(option);
+
+        // Tentukan tipe data & skala
+        const val = csvData[0][col];
+        const type = !isNaN(parseFloat(val)) ? "Numerik" : "Teks";
+        const skala = type === "Numerik" ? "Interval/Ratio" : "Nominal/Ordinal";
+        dataTypeTable.innerHTML += `<tr><td>${col}</td><td>${type}</td><td>${skala}</td></tr>`;
+
+        // Ambil kategori unik untuk kolom teks
+        if (type === "Teks") {
+            const unique = [...new Set(
+                csvData
+                    .map(r => (r[col] || '').toString().trim())
+                    .filter(v => v) // hanya yang tidak kosong
+            )];
+            kategoriMap[col] = unique;
+        }
+    });
+}
+
+
+
+    // Ringkasan numerik
+    const numCols = Object.keys(csvData[0]).filter(k=>!isNaN(parseFloat(csvData[0][k])));
+    if(numCols.length > 0){
+        const firstNumCol = numCols[0];
+        const values = csvData.map(r=>parseFloat(r[firstNumCol])||0);
+        const avgVal = (values.reduce((a,b)=>a+b,0)/values.length).toFixed(2);
+        summaryText.textContent = `Total ${csvData.length} responden. Rata-rata nilai kolom '${firstNumCol}': ${avgVal}.`;
+    } else {
+        summaryText.textContent = `Total ${csvData.length} responden. Tidak ada kolom numerik.`;
+    }
+
+// Fungsi render chart
+function renderCharts(){
+    const col = questionSelect.value;
+    if(!col || csvData.length===0) return;
+
+    chartsArea.innerHTML = "";
+    chartInstances.forEach(c=>c.destroy());
+    chartInstances=[];
+
+    const rawValues = csvData.map(r => (r[col] || '').toString().trim()).filter(v => v !== '');
+    const values = rawValues.slice();
+
+    const isNPM = col.toLowerCase().includes("npm");
+    const isNama = col.toLowerCase().includes("nama");
+    const isAngkatan = col.toLowerCase().includes("angkatan");
+    const allDigits = values.every(v => /^\d+$/.test(v));
+    const isNumeric = allDigits || isAngkatan;
+
+    let cleanedValues = [];
+
+    // === 1️⃣ NPM ===
+    if (isNPM) {
+        const npmPattern = /^\d{8,}$/; // minimal 8 digit
+        cleanedValues = values.filter(v => npmPattern.test(v));
+        infoText.textContent = cleanedValues.length === 0 
+            ? "⚠️ Tidak ada data NPM valid."
+            : "";
+    }
+
+    // === 2️⃣ Nama ===
+    else if (isNama) {
+        // hanya huruf, spasi, tanda petik, dan titik
+        cleanedValues = values.filter(v => /^[A-Za-z\s'.]+$/.test(v));
+        infoText.textContent = cleanedValues.length === 0 
+            ? "⚠️ Tidak ada nama valid (semua terfilter karena tidak sesuai format huruf)."
+            : "";
+    }
+
+    // === 3️⃣ Angkatan ===
+    else if (isAngkatan) {
+        const validYears = values
+            .map(v => parseInt(v))
+            .filter(v => v >= 2021 && v <= 2025);
+        cleanedValues = validYears;
+        infoText.textContent = cleanedValues.length === 0 
+            ? "⚠️ Tidak ada data angkatan valid (2021–2025)."
+            : "";
+    }
+
+    // === 4️⃣ Rating 1–5 ===
+    else if (["Kepuasan","Kenyamanan","Keamanan"].some(k => col.toLowerCase().includes(k.toLowerCase()))) {
+        cleanedValues = values.map(v => {
+            let num = parseFloat(v);
+            return (num >= 1 && num <= 5) ? num : NaN;
+        }).filter(v => !isNaN(v));
+    }
+
+    // === 5️⃣ Kolom numerik lain ===
+    else if (isNumeric) {
+        cleanedValues = values.map(v => parseFloat(v)).filter(v => !isNaN(v));
+    }
+
+    // === 6️⃣ Kolom teks biasa ===
+    else {
+        cleanedValues = values.filter(v => v && v !== 'undefined' && v !== 'null');
+
+        if (col === "Fakultas") {
+            const daftarFakultas = [
+                "Fakultas Arsitektur dan Desain",
+                "Fakultas Ekonomi dan Bisnis",
+                "Fakultas Hukum",
+                "Fakultas Ilmu Komputer",
+                "Fakultas Ilmu Sosial dan Politik",
+                "Fakultas Pertanian",
+                "Fakultas Teknik dan Sains"
+            ];
+            cleanedValues = cleanedValues.filter(v => daftarFakultas.includes(v));
+        }
+    }
+
+    // === Jika kosong ===
+    if(cleanedValues.length===0){
+        chartsArea.innerHTML = "<p class='text-danger'>Tidak ada data valid untuk pertanyaan ini.</p>";
+        return;
+    }
+
+    // === Tentukan jenis chart ===
+    const chartTypes = (typeof cleanedValues[0] === "number") ? ['bar','line'] : ['bar','pie','polarArea'];
+
+    chartTypes.forEach(type=>{
+        const card = document.createElement('div');
+        card.className='card';
+        const title = document.createElement('h6');
+        title.textContent=`${col} - ${type}`;
+        card.appendChild(title);
+
+        const canvas = document.createElement('canvas');
+        card.appendChild(canvas);
+        chartsArea.appendChild(card);
+
+        let labels=[], data=[];
+        if(['bar','pie','polarArea'].includes(type)){
+            const counts = {};
+            cleanedValues.forEach(v=>counts[v]=(counts[v]||0)+1);
+            labels = Object.keys(counts);
+            data = Object.values(counts);
+        } else {
+            labels = cleanedValues.map((v,i)=>i+1);
+            data = cleanedValues;
+        }
+
+        const ctx = canvas.getContext('2d');
+        const chart = new Chart(ctx,{
+            type,
+            data: {
+                labels,
+                datasets:[{
+                    label: col,
+                    data,
+                    backgroundColor:'rgba(13,110,253,0.7)',
+                    borderColor:'rgba(13,110,253,1)',
+                    borderWidth:1,
+                    fill: type==='line'
+                }]
+            },
+            options:{responsive:true}
+        });
+        chartInstances.push(chart);
+    });
+}
+
+
+
+
+questionSelect.addEventListener('change',renderCharts);
+</script>
+</body>
+</html>
